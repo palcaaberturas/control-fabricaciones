@@ -15,7 +15,7 @@ def extraer_datos_pdf(ruta_pdf):
     aberturas_pdf = []
     
     patron = re.compile(
-        r'Nombre:\s*(?P<codigo>\d+)\s+(?P<nom>[A-Za-z0-9]+)\s+(?P<orden>\d+)[\s\S]*?'
+        r'Nombre:\s*(?P<codigo>\d+)\s+(?P<nom>[A-Za-z0-9]+)\s+(?P<orden>[A-Za-z0-9]+)[\s\S]*?'
         r'Ancho:\s*(?P<ancho>\d+(?:\.\d+)?)[\s\S]*?'
         r'Alto:\s*(?P<alto>\d+(?:\.\d+)?)'
     )
@@ -96,46 +96,75 @@ def auditar_fabricacion(ruta_pdf, ruta_bd, num_fabricacion):
         # Borrar decimales si Pandas los agregó (ej: '12.0' -> '12')
         df_filtrada[col] = df_filtrada[col].str.replace(r'\.0$', '', regex=True)
     
-    # Asegurar que la nomenclatura esté en mayúsculas (ej: 'pv1' pasa a 'PV1')
+    # Asegurar que la nomenclatura y el orden estén en mayúsculas (ej: 'pv1' pasa a 'PV1', 'a' pasa a 'A')
     df_filtrada['Nomenclatura'] = df_filtrada['Nomenclatura'].str.upper()
+    df_filtrada['Orden'] = df_filtrada['Orden'].str.upper()
 
     # 2. Limpiar los datos provenientes del PDF
     df_pdf['Codigo'] = df_pdf['Codigo'].astype(str).str.strip().str.replace(r'\.0$', '', regex=True)
-    df_pdf['Orden'] = df_pdf['Orden'].astype(str).str.strip().str.replace(r'\.0$', '', regex=True)
+    df_pdf['Orden'] = df_pdf['Orden'].astype(str).str.strip().str.replace(r'\.0$', '', regex=True).str.upper()
     df_pdf['Nomenclatura'] = df_pdf['Nomenclatura'].astype(str).str.strip().str.upper()
 
     # Convertimos ancho y alto a números para poder hacer la comparación matemática
     df_filtrada['Ancho_BD'] = pd.to_numeric(df_filtrada['Ancho_BD'], errors='coerce')
     df_filtrada['Alto_BD'] = pd.to_numeric(df_filtrada['Alto_BD'], errors='coerce')
     
-    # 5. Cruzar los datos 
-    cruce = pd.merge(df_pdf, df_filtrada, on=['Codigo', 'Nomenclatura', 'Orden'], how='left')
+    # 5. Cruzar los datos (outer para detectar faltantes en cualquiera de los dos lados)
+    cruce = pd.merge(df_pdf, df_filtrada, on=['Codigo', 'Nomenclatura', 'Orden'], how='outer', indicator=True)
 
-    # 6. Chequear discrepancias
+    # 6. Clasificar cada abertura: correcta, con error de medidas, o faltante en un lado
+    correctas = []
     errores = []
+    solo_en_pdf = []
+    solo_en_bd = []
+
     for _, row in cruce.iterrows():
         abertura = f"{row['Codigo']} {row['Nomenclatura']} {row['Orden']}"
-        
-        if pd.isna(row['Ancho_BD']):
-            errores.append(f"⚠️ {abertura}: Está en el PDF pero NO se encontró en la BD bajo la fabricación {num_fabricacion}.")
+
+        if row['_merge'] == 'left_only':
+            solo_en_pdf.append(f"⚠️ {abertura}: Está en el PDF pero NO se encontró en la BD bajo la fabricación {num_fabricacion}.")
             continue
-            
+
+        if row['_merge'] == 'right_only':
+            solo_en_bd.append(f"⚠️ {abertura}: Está en la BD bajo la fabricación {num_fabricacion} pero NO se encontró en el PDF.")
+            continue
+
+        # Está en ambos lados: comparar medidas
+        problemas_medidas = []
         if row['Ancho_PDF'] != row['Ancho_BD']:
-            errores.append(f"❌ {abertura} - Error en ANCHO: Armado PDF={row['Ancho_PDF']} vs Sheets={row['Ancho_BD']}")
-            
+            problemas_medidas.append(f"ANCHO: Armado PDF={row['Ancho_PDF']} vs Sheets={row['Ancho_BD']}")
         if row['Alto_PDF'] != row['Alto_BD']:
-            errores.append(f"❌ {abertura} - Error en ALTO: Armado PDF={row['Alto_PDF']} vs Sheets={row['Alto_BD']}")
+            problemas_medidas.append(f"ALTO: Armado PDF={row['Alto_PDF']} vs Sheets={row['Alto_BD']}")
+
+        if problemas_medidas:
+            errores.append(f"❌ {abertura} - Error en " + " | ".join(problemas_medidas))
+        else:
+            correctas.append(f"✅ {abertura}: OK (las medidas coinciden)")
 
     # 7. Imprimir Reporte
     print("\n" + "="*40)
     print("        RESULTADO DE LA AUDITORÍA")
     print("="*40)
-    if not errores:
-        print("🟢 ¡Todo perfecto! Las medidas del PDF coinciden exactamente con la Base de Datos.")
-    else:
-        print(f"🔴 Se encontraron {len(errores)} problemas:\n")
-        for e in errores:
-            print(e)
+
+    for msg in correctas:
+        print(msg)
+    for msg in errores:
+        print(msg)
+    for msg in solo_en_pdf:
+        print(msg)
+    for msg in solo_en_bd:
+        print(msg)
+
+    total = len(correctas) + len(errores) + len(solo_en_pdf) + len(solo_en_bd)
+    print("\n" + "-"*40)
+    print(f"Total de aberturas evaluadas: {total}")
+    print(f"🟢 Correctas: {len(correctas)}")
+    print(f"🔴 Con error de medidas: {len(errores)}")
+    print(f"⚠️ Solo en PDF (faltan en BD): {len(solo_en_pdf)}")
+    print(f"⚠️ Solo en BD (faltan en PDF): {len(solo_en_bd)}")
+
+    if not errores and not solo_en_pdf and not solo_en_bd:
+        print("\n🟢 ¡Todo perfecto! Las medidas del PDF coinciden exactamente con la Base de Datos.")
 
 
 # --- EJECUCIÓN PRINCIPAL ---

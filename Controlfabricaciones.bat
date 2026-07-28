@@ -8,11 +8,11 @@ echo.
 :: 0. Poner la consola en UTF-8 (evita problemas con los emojis)
 chcp 65001 >nul
 
-:: 1. Cambiar al directorio donde esta el script
-cd /d "C:\Users\NICO\Onedrive PALCA\OneDrive\PALCA\Scripts Python PALCA"
+:: 1. Cambiar al directorio donde esta el script (repo git)
+cd /d "C:\Users\NICO\repos\Control fabricaciones"
 
 :: 2. Ejecutar el script usando el Python del entorno virtual
-"C:\Users\NICO\Onedrive PALCA\OneDrive\PALCA\Scripts Python PALCA\.venv\Scripts\python.exe" "Control fabricaciones\Control_fabricacionesV0.1.py"
+"C:\Users\NICO\Onedrive PALCA\OneDrive\PALCA\Scripts Python PALCA\.venv\Scripts\python.exe" "Control_fabricacionesV0.1.py"
 
 echo.
 echo ====================================================
