@@ -42,8 +42,17 @@ def extraer_datos_pdf(ruta_pdf):
     
     return df_pdf
 
-def auditar_fabricacion(ruta_pdf, ruta_bd, num_fabricacion):
-    print(f"\n--- Iniciando auditoría para Fabricación N° {num_fabricacion} ---")
+# Tipos de control: columna de la BD por la que se filtra y nombre para los mensajes
+TIPOS_CONTROL = {
+    'fabricacion': {'idx_filtro': 34, 'etiqueta': 'fabricación'},  # Columna AI
+    'dvh': {'idx_filtro': 35, 'etiqueta': 'DVH'},                  # Columna AJ
+}
+
+def auditar_fabricacion(ruta_pdf, ruta_bd, num_fabricacion, tipo_control='fabricacion'):
+    idx_fabric = TIPOS_CONTROL[tipo_control]['idx_filtro']
+    etiqueta = TIPOS_CONTROL[tipo_control]['etiqueta']
+
+    print(f"\n--- Iniciando auditoría para {etiqueta} N° {num_fabricacion} ---")
     
     # 1. Extraer datos del PDF
     print("Leyendo PDF de armado...")
@@ -68,8 +77,8 @@ def auditar_fabricacion(ruta_pdf, ruta_bd, num_fabricacion):
     idx_orden = 8    # Columna 8 (Numero de orden)
     idx_ancho = 15   # Columna 15 (Ancho)
     idx_alto = 16    # Columna 16 (Alto)
-    idx_fabric = 34  # Columna 34 / AI 
-    
+    # idx_fabric depende del tipo de control: 34 / AI (fabricación) o 35 / AJ (DVH)
+
     # Extraer usando .iloc SOLO las 6 columnas que necesitamos
     df_bd = df_bd.iloc[:, [idx_codigo, idx_nom, idx_orden, idx_ancho, idx_alto, idx_fabric]].copy()
     
@@ -83,10 +92,10 @@ def auditar_fabricacion(ruta_pdf, ruta_bd, num_fabricacion):
     df_filtrada = df_bd[df_bd['Nro_Fabricacion'] == num_fabricacion_limpio].copy()
 
     if df_filtrada.empty:
-        print(f"⚠️ No se encontraron registros para la fabricación '{num_fabricacion_limpio}'.")
+        print(f"⚠️ No se encontraron registros para {etiqueta} '{num_fabricacion_limpio}'.")
         return
-        
-    print(f"✅ Se encontraron {len(df_filtrada)} aberturas en la BD para esta fabricación.")
+
+    print(f"✅ Se encontraron {len(df_filtrada)} aberturas en la BD para {etiqueta} {num_fabricacion_limpio}.")
 
     # --- NUEVA LIMPIEZA PROFUNDA DE CLAVES PARA EL CRUCE ---
     
@@ -122,11 +131,11 @@ def auditar_fabricacion(ruta_pdf, ruta_bd, num_fabricacion):
         abertura = f"{row['Codigo']} {row['Nomenclatura']} {row['Orden']}"
 
         if row['_merge'] == 'left_only':
-            solo_en_pdf.append(f"⚠️ {abertura}: Está en el PDF pero NO se encontró en la BD bajo la fabricación {num_fabricacion}.")
+            solo_en_pdf.append(f"⚠️ {abertura}: Está en el PDF pero NO se encontró en la BD bajo {etiqueta} {num_fabricacion}.")
             continue
 
         if row['_merge'] == 'right_only':
-            solo_en_bd.append(f"⚠️ {abertura}: Está en la BD bajo la fabricación {num_fabricacion} pero NO se encontró en el PDF.")
+            solo_en_bd.append(f"⚠️ {abertura}: Está en la BD bajo {etiqueta} {num_fabricacion} pero NO se encontró en el PDF.")
             continue
 
         # Está en ambos lados: comparar medidas
@@ -170,6 +179,16 @@ def auditar_fabricacion(ruta_pdf, ruta_bd, num_fabricacion):
 # --- EJECUCIÓN PRINCIPAL ---
 if __name__ == "__main__":
 
+    # Elegir tipo de control
+    print("¿Qué control querés hacer?")
+    print("  1) Control de fabricaciones")
+    print("  2) Control de DVH")
+    opcion = input("Ingresá 1 o 2 y presioná Enter: ").strip()
+    while opcion not in ('1', '2'):
+        opcion = input("Opción inválida. Ingresá 1 o 2: ").strip()
+    tipo_control = 'fabricacion' if opcion == '1' else 'dvh'
+    etiqueta = TIPOS_CONTROL[tipo_control]['etiqueta']
+
     # Iniciar ventana oculta de Tkinter
     root = tk.Tk()
     root.withdraw()
@@ -185,7 +204,7 @@ if __name__ == "__main__":
         print("No seleccionaste ningún PDF. Cancelando ejecución...")
         exit()
         
-    numero_fabricacion = input("\nIngresa el número de fabricación a auditar (ej. 61) y presiona Enter: ")
-    
+    numero_fabricacion = input(f"\nIngresa el número de {etiqueta} a auditar (ej. 61) y presiona Enter: ")
+
     # Ejecutamos pasando la ruta local del PDF y la URL de internet para el CSV
-    auditar_fabricacion(archivo_pdf, "https://docs.google.com/spreadsheets/d/e/2PACX-1vRqXV6pwWMgPfMf-WwV9HLUdJx0tHBIJOFhuvUQ1FQPFK_Lvcuse9SAdvWT35yT-tvTMt0Pnun7xZYr/pub?gid=1177155904&single=true&output=csv", numero_fabricacion)
+    auditar_fabricacion(archivo_pdf, "https://docs.google.com/spreadsheets/d/e/2PACX-1vRqXV6pwWMgPfMf-WwV9HLUdJx0tHBIJOFhuvUQ1FQPFK_Lvcuse9SAdvWT35yT-tvTMt0Pnun7xZYr/pub?gid=1177155904&single=true&output=csv", numero_fabricacion, tipo_control)
